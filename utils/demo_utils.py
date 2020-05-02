@@ -1,30 +1,39 @@
 import torch
 import numpy as np
-from transformers import BertTokenizer, BertModel, BertConfig
-import pytorch_pretrained_bert
+from transformers import *
 import time as tm
 
-def get_bert_layer_representations(seq_len, text_array, remove_chars, word_ind_to_extract):
-    config = BertConfig.from_pretrained("bert-base-uncased", output_hidden_states=True)
+def get_model_layer_representations(ModelClass, ModelConfig, ModelTokenizer, pretrained_weight_shortcuts, seq_len, text_array, remove_chars, word_ind_to_extract):
 
-    model = BertModel.from_pretrained("bert-base-uncased",config=config)
-    tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+    config = ModelConfig.from_pretrained(pretrained_weight_shortcuts, output_hidden_states=True)
+    model = ModelClass.from_pretrained(pretrained_weight_shortcuts,config=config)
+    tokenizer = ModelTokenizer.from_pretrained(pretrained_weight_shortcuts)
     model.eval()
 
     # get the token embeddings
     token_embeddings = []
     for word in text_array:
-        current_token_embedding = get_bert_token_embeddings([word], tokenizer, model, remove_chars)
+        current_token_embedding = get_model_token_embeddings([word], tokenizer, model, remove_chars)
         token_embeddings.append(np.mean(current_token_embedding.detach().numpy(), 1))
     
     # where to store layer-wise bert embeddings of particular length
-    BERT = {}
-    for layer in range(12):
-        BERT[layer] = []
-    BERT[-1] = token_embeddings
+    MODEL_DICT = {}
+    iter_length = 0
+    if ModelClass == DistilBertModel:
+        iter_length = 6
+    else:
+        iter_length = 12
 
-    if word_ind_to_extract < 0: # the index is specified from the end of the array, so invert the index
-        from_start_word_ind_to_extract = seq_len + 2 + word_ind_to_extract  # add 2 for CLS + SEP tokens
+    for layer in range(iter_length):
+        MODEL_DICT[layer] = []
+    MODEL_DICT[-1] = token_embeddings
+
+    if word_ind_to_extract < 0:
+        # the index is specified from the end of the array, so invert the index
+        if ModelClass == BertModel or ModelClass == DistilBertModel:
+            from_start_word_ind_to_extract = seq_len + 2 + word_ind_to_extract# add 2 for CLS + SEP tokens
+        else:
+            from_start_word_ind_to_extract = seq_len + word_ind_to_extract
     else:
         from_start_word_ind_to_extract = word_ind_to_extract
 
@@ -33,17 +42,22 @@ def get_bert_layer_representations(seq_len, text_array, remove_chars, word_ind_t
     # before we've seen enough words to make up the sequence length, add the representation for the last word 'seq_len' times
     word_seq = text_array[:seq_len]
     for _ in range(seq_len):
-        BERT = add_avrg_token_embedding_for_specific_word(word_seq,tokenizer,model,remove_chars,from_start_word_ind_to_extract,BERT)
+        MODEL_DICT = add_avrg_token_embedding_for_specific_word(word_seq,
+                                                                     tokenizer,
+                                                                     model,
+                                                                     remove_chars,
+                                                                     from_start_word_ind_to_extract,
+                                                                     MODEL_DICT, ModelClass)
 
     # then add the embedding of the last word in a sequence as the embedding for the sequence
     for end_curr_seq in range(seq_len, len(text_array)):
         word_seq = text_array[end_curr_seq-seq_len+1:end_curr_seq+1]
-        BERT = add_avrg_token_embedding_for_specific_word(word_seq,
+        MODEL_DICT = add_avrg_token_embedding_for_specific_word(word_seq,
                                                           tokenizer,
                                                           model,
                                                           remove_chars,
                                                           from_start_word_ind_to_extract,
-                                                          BERT)
+                                                          MODEL_DICT, ModelClass)
 
         if end_curr_seq % 100 == 0:
             print('Completed {} out of {}: {}'.format(end_curr_seq, len(text_array), tm.time()-start_time))
@@ -51,13 +65,13 @@ def get_bert_layer_representations(seq_len, text_array, remove_chars, word_ind_t
 
     print('Done extracting sequences of length {}'.format(seq_len))
     
-    return BERT
+    return MODEL_DICT
 
 # extracts layer representations for all words in words_in_array
 # encoded_layers: list of tensors, length num layers. each tensor of dims num tokens by num dimensions in representation
 # word_ind_to_token_ind: dict that maps from index in words_in_array to index in array of tokens when words_in_array is tokenized,
 #                       with keys: index of word, and values: array of indices of corresponding tokens when word is tokenized
-def predict_bert_embeddings(words_in_array, tokenizer, model, remove_chars):    
+def predict_model_embeddings(words_in_array, tokenizer, model, remove_chars, ModelClass):    
     
     for word in words_in_array:
         if word in remove_chars:
@@ -88,26 +102,25 @@ def predict_bert_embeddings(words_in_array, tokenizer, model, remove_chars):
     tokens_tensor = torch.tensor([indexed_tokens])
     
     encoded_layers = model(tokens_tensor)
-    #pooled_output = np.squeeze(model.pooler(encoded_layers[-1]).detach().numpy())
-    # hidden_states, mems = model(tokens_tensor)
-    # seq_length = hidden_states.size(1)
-    # lower_hidden_states = list(t[-seq_length:, ...].transpose(0, 1) for t in mems)
-    # all_hidden_states = lower_hidden_states + [hidden_states]
-    return list(encoded_layers[2][1:]), word_ind_to_token_ind
-    # return encoded_layers, word_ind_to_token_ind, pooled_output
+    if ModelClass == BertModel:
+        hidden_states = list(encoded_layers[2][1:])
+    if ModelClass == DistilBertModel:
+        hidden_states = list(encoded_layers[1][1:])
+        
+    return hidden_states, word_ind_to_token_ind
   
 # add the embeddings for a specific word in the sequence
 # token_inds_to_avrg: indices of tokens in embeddings output to avrg
-def add_word_bert_embedding(bert_dict, embeddings_to_add, token_inds_to_avrg, specific_layer=-1):
+def add_word_model_embedding(model_dict, embeddings_to_add, token_inds_to_avrg, specific_layer=-1):
     if specific_layer >= 0:  # only add embeddings for one specified layer
         layer_embedding = embeddings_to_add[specific_layer]
         full_sequence_embedding = layer_embedding.detach().numpy()
-        bert_dict[specific_layer].append(np.mean(full_sequence_embedding[0,token_inds_to_avrg,:],0))
+        model_dict[specific_layer].append(np.mean(full_sequence_embedding[0,token_inds_to_avrg,:],0))
     else:
         for layer, layer_embedding in enumerate(embeddings_to_add):
             full_sequence_embedding = layer_embedding.detach().numpy()
-            bert_dict[layer].append(np.mean(full_sequence_embedding[0,token_inds_to_avrg,:],0)) # avrg over all tokens for specified word
-    return bert_dict
+            model_dict[layer].append(np.mean(full_sequence_embedding[0,token_inds_to_avrg,:],0)) # avrg over all tokens for specified word
+    return model_dict
 
 # predicts representations for specific word in input word sequence, and adds to existing layer-wise dictionary
 #
@@ -117,18 +130,21 @@ def add_word_bert_embedding(bert_dict, embeddings_to_add, token_inds_to_avrg, sp
 # remove_chars: characters that should not be included in the represention when word_seq is tokenized
 # from_start_word_ind_to_extract: the index of the word whose features to extract, INDEXED FROM START OF WORD_SEQ
 # bert_dict: where to save the extracted embeddings
-def add_avrg_token_embedding_for_specific_word(word_seq,tokenizer,model,remove_chars,from_start_word_ind_to_extract,bert_dict):
+def add_avrg_token_embedding_for_specific_word(word_seq,tokenizer,model,remove_chars,from_start_word_ind_to_extract,model_dict,ModelClass):
     
-    word_seq = ['[CLS]'] + list(word_seq) + ['[SEP]']   
-    all_sequence_embeddings, word_ind_to_token_ind = predict_bert_embeddings(word_seq, tokenizer, model, remove_chars)
+    if ModelClass == BertModel or ModelClass == DistilBertModel:
+        word_seq = ['[CLS]'] + list(word_seq) + ['[SEP]']   
+    else:
+        word_seq = list(word_seq)
+    all_sequence_embeddings, word_ind_to_token_ind= predict_model_embeddings(word_seq, tokenizer, model, remove_chars, ModelClass)
     token_inds_to_avrg = word_ind_to_token_ind[from_start_word_ind_to_extract]
-    bert_dict = add_word_bert_embedding(bert_dict, all_sequence_embeddings,token_inds_to_avrg)
+    model_dict = add_word_model_embedding(model_dict, all_sequence_embeddings,token_inds_to_avrg)
     
-    return bert_dict
+    return model_dict
 
 
-# get the BERT token embeddings
-def get_bert_token_embeddings(words_in_array, tokenizer, model, remove_chars):    
+# get the MODEL token embeddings
+def get_model_token_embeddings(words_in_array, tokenizer, model, remove_chars):    
     for word in words_in_array:
         if word in remove_chars:
             print('An input word is also in remove_chars. This word will be removed and may lead to misalignment. Proceed with caution.')
@@ -155,6 +171,8 @@ def get_bert_token_embeddings(words_in_array, tokenizer, model, remove_chars):
     
     # convert token to vocabulary indices
     indexed_tokens = tokenizer.convert_tokens_to_ids(seq_tokens)
+
+    #convert inputs to PyTorch tensors
     tokens_tensor = torch.tensor([indexed_tokens])
     
     token_embeddings = model.embeddings.forward(tokens_tensor)
@@ -162,50 +180,5 @@ def get_bert_token_embeddings(words_in_array, tokenizer, model, remove_chars):
     return token_embeddings
     
     
-# add the embeddings for all individual words
-# specific_layer specifies only one layer to add embeddings from
-def add_all_bert_embeddings(bert_dict, embeddings_to_add, specific_layer=-1):
-    if specific_layer >= 0:
-        layer_embedding = embeddings_to_add[specific_layer]
-        seq_len = layer_embedding.shape[1]
-        full_sequence_embedding = layer_embedding.detach().numpy()
-        
-        for word in range(seq_len):
-            bert_dict[specific_layer].append(full_sequence_embedding[0,word,:])
-    else:  
-        for layer, layer_embedding in enumerate(embeddings_to_add):
-            seq_len = layer_embedding.shape[1]
-            full_sequence_embedding = layer_embedding.detach().numpy()
-
-            for word in range(seq_len):
-                bert_dict[layer].append(full_sequence_embedding[0,word,:])
-    return bert_dict
 
 
-# add the embeddings for only the last word in the sequence that is not [SEP] token
-def add_last_nonsep_bert_embedding(bert_dict, embeddings_to_add, specific_layer=-1):
-    if specific_layer >= 0:
-        layer_embedding = embeddings_to_add[specific_layer]
-        full_sequence_embedding = layer_embedding.detach().numpy()
-        
-        bert_dict[specific_layer].append(full_sequence_embedding[0,-2,:])
-    else:
-        for layer, layer_embedding in enumerate(embeddings_to_add):
-            full_sequence_embedding = layer_embedding.detach().numpy()
-
-            bert_dict[layer].append(full_sequence_embedding[0,-2,:])
-    return bert_dict
-
-# add the CLS token embeddings ([CLS] is the first token in each string)
-def add_cls_bert_embedding(bert_dict, embeddings_to_add, specific_layer=-1):
-    if specific_layer >= 0:
-        layer_embedding = embeddings_to_add[specific_layer]
-        full_sequence_embedding = layer_embedding.detach().numpy()
-        
-        bert_dict[specific_layer].append(full_sequence_embedding[0,0,:])
-    else:
-        for layer, layer_embedding in enumerate(embeddings_to_add):
-            full_sequence_embedding = layer_embedding.detach().numpy()
-
-            bert_dict[layer].append(full_sequence_embedding[0,0,:])
-    return bert_dict

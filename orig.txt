@@ -1,0 +1,13 @@
+Namespace(nlp_model='bert', output_dir='nlp_features', sequence_length=5)
+Completed 100 out of 5176: 26.456536769866943
+Completed 200 out of 5176: 24.666504859924316
+Completed 300 out of 5176: 24.37846851348877
+Completed 400 out of 5176: 22.146841049194336
+Completed 500 out of 5176: 22.247663497924805
+Completed 600 out of 5176: 25.967754125595093
+Completed 700 out of 5176: 25.017034769058228
+Completed 800 out of 5176: 22.02106475830078
+Completed 900 out of 5176: 22.460607051849365
+Completed 1000 out of 5176: 22.112741947174072
+Completed 1100 out of 5176: 27.231159925460815
+Completed 1200 out of 5176: 29.868323802947998
