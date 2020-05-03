@@ -13,13 +13,13 @@ def get_model_layer_representations(ModelClass, ModelConfig, ModelTokenizer, pre
     # get the token embeddings
     token_embeddings = []
     for word in text_array:
-        current_token_embedding = get_model_token_embeddings([word], tokenizer, model, remove_chars)
+        current_token_embedding = get_model_token_embeddings([word], tokenizer, model, remove_chars, ModelClass)
         token_embeddings.append(np.mean(current_token_embedding.detach().numpy(), 1))
     
     # where to store layer-wise bert embeddings of particular length
     MODEL_DICT = {}
     iter_length = 0
-    if ModelClass == DistilBertModel:
+    if pretrained_weight_shortcuts == 'distilgpt2' or pretrained_weight_shortcuts == 'distilbert-base-cased':
         iter_length = 6
     else:
         iter_length = 12
@@ -30,7 +30,7 @@ def get_model_layer_representations(ModelClass, ModelConfig, ModelTokenizer, pre
 
     if word_ind_to_extract < 0:
         # the index is specified from the end of the array, so invert the index
-        if ModelClass == BertModel or ModelClass == DistilBertModel:
+        if ModelClass == BertModel or ModelClass == DistilBertModel or ModelClass == GPT2Model:
             from_start_word_ind_to_extract = seq_len + 2 + word_ind_to_extract# add 2 for CLS + SEP tokens
         else:
             from_start_word_ind_to_extract = seq_len + word_ind_to_extract
@@ -102,11 +102,12 @@ def predict_model_embeddings(words_in_array, tokenizer, model, remove_chars, Mod
     tokens_tensor = torch.tensor([indexed_tokens])
     
     encoded_layers = model(tokens_tensor)
-    if ModelClass == BertModel:
+    if ModelClass == BertModel or ModelClass==GPT2Model:
         hidden_states = list(encoded_layers[2][1:])
     if ModelClass == DistilBertModel:
         hidden_states = list(encoded_layers[1][1:])
-        
+
+    print(hidden_states)
     return hidden_states, word_ind_to_token_ind
   
 # add the embeddings for a specific word in the sequence
@@ -132,10 +133,8 @@ def add_word_model_embedding(model_dict, embeddings_to_add, token_inds_to_avrg, 
 # bert_dict: where to save the extracted embeddings
 def add_avrg_token_embedding_for_specific_word(word_seq,tokenizer,model,remove_chars,from_start_word_ind_to_extract,model_dict,ModelClass):
     
-    if ModelClass == BertModel or ModelClass == DistilBertModel:
-        word_seq = ['[CLS]'] + list(word_seq) + ['[SEP]']   
-    else:
-        word_seq = list(word_seq)
+    # if ModelClass == BertModel or ModelClass == DistilBertModel:
+    word_seq = ['[CLS]'] + list(word_seq) + ['[SEP]']   
     all_sequence_embeddings, word_ind_to_token_ind= predict_model_embeddings(word_seq, tokenizer, model, remove_chars, ModelClass)
     token_inds_to_avrg = word_ind_to_token_ind[from_start_word_ind_to_extract]
     model_dict = add_word_model_embedding(model_dict, all_sequence_embeddings,token_inds_to_avrg)
@@ -144,7 +143,7 @@ def add_avrg_token_embedding_for_specific_word(word_seq,tokenizer,model,remove_c
 
 
 # get the MODEL token embeddings
-def get_model_token_embeddings(words_in_array, tokenizer, model, remove_chars):    
+def get_model_token_embeddings(words_in_array, tokenizer, model, remove_chars, ModelClass):    
     for word in words_in_array:
         if word in remove_chars:
             print('An input word is also in remove_chars. This word will be removed and may lead to misalignment. Proceed with caution.')
@@ -174,8 +173,10 @@ def get_model_token_embeddings(words_in_array, tokenizer, model, remove_chars):
 
     #convert inputs to PyTorch tensors
     tokens_tensor = torch.tensor([indexed_tokens])
-    
-    token_embeddings = model.embeddings.forward(tokens_tensor)
+    if ModelClass == BertModel or ModelClass == DistilBertModel:
+        token_embeddings = model.embeddings.forward(tokens_tensor)
+    else:
+        token_embeddings = model.wte.forward(tokens_tensor) 
     
     return token_embeddings
     
