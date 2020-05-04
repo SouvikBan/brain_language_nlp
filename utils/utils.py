@@ -49,14 +49,14 @@ def delay_mat(mat, delays):
 def get_nlp_features_fixed_length(layer, seq_len, feat_type, feat_dir, train_indicator, SKIP_WORDS=20, END_WORDS=5176):
     
     loaded = np.load(feat_dir + feat_type + '_length_'+str(seq_len)+ '_layer_' + str(layer) + '.npy')
-    if feat_type == 'elmo':
-        train = loaded[SKIP_WORDS:END_WORDS,:][:,:512][train_indicator]   # only forward LSTM
-        test = loaded[SKIP_WORDS:END_WORDS,:][:,:512][~train_indicator]   # only forward LSTM
-    elif feat_type == 'bert' or feat_type == 'transformer_xl' or feat_type == 'use':
+    # if feat_type == 'elmo':
+    #     train = loaded[SKIP_WORDS:END_WORDS,:][:,:512][train_indicator]   # only forward LSTM
+    #     test = loaded[SKIP_WORDS:END_WORDS,:][:,:512][~train_indicator]   # only forward LSTM
+    if feat_type == 'distilgpt2' or feat_type == 'gpt2':
         train = loaded[SKIP_WORDS:END_WORDS,:][train_indicator]
         test = loaded[SKIP_WORDS:END_WORDS,:][~train_indicator]
     else:
-        print('Unrecognized NLP feature type {}. Available options elmo, bert, transformer_xl, use'.format(feat_type))
+        print('Unrecognized NLP feature type {}. Available options gpt2, distilgpt2'.format(feat_type))
     
     pca = PCA(n_components=10, svd_solver='full')
     pca.fit(train)

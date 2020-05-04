@@ -107,7 +107,6 @@ def predict_model_embeddings(words_in_array, tokenizer, model, remove_chars, Mod
     if ModelClass == DistilBertModel:
         hidden_states = list(encoded_layers[1][1:])
 
-    print(hidden_states)
     return hidden_states, word_ind_to_token_ind
   
 # add the embeddings for a specific word in the sequence

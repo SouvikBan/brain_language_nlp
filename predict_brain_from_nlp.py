@@ -1,6 +1,5 @@
 import argparse
 import numpy as np
-
 from utils.utils import run_class_time_CV_fmri_crossval_ridge
     
 if __name__ == '__main__':
@@ -14,18 +13,14 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
     print(args)
-        
-    predict_feat_dict = {'nlp_feat_type':args.nlp_feat_type,
-                         'nlp_feat_dir':args.nlp_feat_dir,
-                         'layer':args.layer,
-                         'seq_len':args.sequence_length}
-
 
     # loading fMRI data
     data = np.load('./data/fMRI/data_subject_{}.npy'.format(args.subject))
-
-    corrs_t, _, _, preds_t, test_t = run_class_time_CV_fmri_crossval_ridge(data,
-                                                                predict_feat_dict)
+    predict_feat_dict = {'nlp_feat_type':args.nlp_feat_type,
+                         'nlp_feat_dir':args.nlp_feat_dir+'/'+args.nlp_feat_type+'/',
+                         'layer':args.layer,
+                         'seq_len':args.sequence_length}
+    corrs_t, _, _, preds_t, test_t = run_class_time_CV_fmri_crossval_ridge(data,predict_feat_dict)
 
     fname = 'predict_{}_with_{}_layer_{}_len_{}'.format(args.subject, args.nlp_feat_type, args.layer, args.sequence_length)
     print('saving: {}'.format(args.output_dir + fname))
