@@ -10,10 +10,7 @@ import os
 import argparse
 
 MODELS = [ (GPT2Model, GPT2Tokenizer,  'distilgpt2'          , GPT2Config),
-           (GPT2Model,       GPT2Tokenizer,        'gpt2'                , GPT2Config),
-           (BertModel,       BertTokenizer,        'bert-base-uncased'   , BertConfig),
-           (DistilBertModel, DistilBertTokenizer, 'distilbert-base-cased', DistilBertConfig) ]
-
+           (GPT2Model,       GPT2Tokenizer,        'gpt2'                , GPT2Config)]
 def save_layer_representations(model_layer_dict, model_name, seq_len, save_dir):
     for layer in model_layer_dict.keys():
         np.save('{}/{}_length_{}_layer_{}.npy'.format(save_dir,model_name,seq_len,layer+1),np.vstack(model_layer_dict[layer]))  
